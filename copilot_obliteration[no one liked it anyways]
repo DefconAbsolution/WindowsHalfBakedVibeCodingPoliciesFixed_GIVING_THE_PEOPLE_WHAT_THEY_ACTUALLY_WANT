@@ -1,0 +1,116 @@
+#Requires -RunAsAdministrator
+# DEFCON ABSOLUTION: COPILOT FULL SYSTEM PURGE — WITH OPTIONAL LOG FILE (Y/N)
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+Write-Host "🔥 SCORCHED EARTH: COPILOT SYSTEM PURGE INITIATED 🔥" -ForegroundColor Red
+
+# === Prompt for log file
+$logChoice = Read-Host "Create destruction log? (Y/N)"
+$logEnabled = $false
+$logPath = "$env:USERPROFILE\Desktop\Copilot_Extermination_Log.txt"
+
+if ($logChoice -match "^[Yy]") {
+    New-Item -Path $logPath -ItemType File -Force | Out-Null
+    $logEnabled = $true
+    Write-Host "🔍 Logging enabled: $logPath"
+}
+
+function Log {
+    param ($msg)
+    Write-Host $msg
+    if ($logEnabled) { Add-Content -Path $logPath -Value $msg }
+}
+
+# === DISM Feature Kill
+$features = @("MicrosoftWindows.Client.Copilot", "Copilot")
+foreach ($feature in $features) {
+    Log "[DISM] Disabling Feature: $feature"
+    dism /online /disable-feature /featurename:$feature /norestart
+}
+
+# === Appx Package Removal
+$apps = Get-AppxPackage -AllUsers | Where-Object { $_.Name -like "*copilot*" }
+foreach ($app in $apps) {
+    Log "[APPX] Removing: $($app.Name)"
+    Remove-AppxPackage -Package $app.PackageFullName -AllUsers
+}
+
+# === Provisioned Package Kill
+$prov = Get-AppxProvisionedPackage -Online | Where-Object { $_.DisplayName -like "*copilot*" }
+foreach ($p in $prov) {
+    Log "[PROVISIONED] Removing: $($p.DisplayName)"
+    Remove-AppxProvisionedPackage -Online -PackageName $p.PackageName
+}
+
+# === Kill Services
+$services = @("CopilotService")
+foreach ($svc in $services) {
+    Log "[SERVICE] Stopping and Disabling: $svc"
+    Stop-Service -Name $svc -Force
+    Set-Service -Name $svc -StartupType Disabled
+}
+
+# === Destroy Tasks
+$tasks = @("Microsoft\\Windows\\WindowsCopilot\\CopilotUpdate")
+foreach ($t in $tasks) {
+    Log "[TASK] Deleting: $t"
+    schtasks /Delete /TN $t /F
+}
+
+# === Registry Extermination
+$regKeys = @(
+    "HKLM:SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsCopilot",
+    "HKCU:SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsCopilot",
+    "HKLM:SOFTWARE\\Microsoft\\Windows\\WindowsCopilot",
+    "HKCU:SOFTWARE\\Microsoft\\Windows\\WindowsCopilot"
+)
+foreach ($rk in $regKeys) {
+    Log "[REGISTRY] Removing: $rk"
+    Remove-Item -Path $rk -Recurse -Force
+}
+
+# === CLSID COM Removal
+$clsids = @(
+    "HKCR:CLSID\\{4D5FD7E5-1E3B-4E3A-A562-CE5E1F2D2F25}",
+    "HKCR:CLSID\\{76B82A57-44F5-4B4A-983F-7A6F588E5E7B}",
+    "HKCR:CLSID\\{E4FE6C00-1702-4DDA-B8E8-DAF1D00871D3}"
+)
+foreach ($clsid in $clsids) {
+    Log "[CLSID] Wiping: $clsid"
+    Remove-Item -Path $clsid -Recurse -Force
+}
+
+# === Filesystem Cleanup
+$paths = @(
+    \"$env:LOCALAPPDATA\\Microsoft\\Windows\\Copilot\",
+    \"$env:LOCALAPPDATA\\Packages\\Microsoft.Windows.Copilot_*\" 
+)
+foreach ($path in $paths) {
+    Log "[FS] Deleting: $path"
+    Remove-Item -Path $path -Recurse -Force
+}
+
+# === Edge Policy Shutdown
+$edgePolicyPath = 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Edge'
+if (-not (Test-Path $edgePolicyPath)) {
+    New-Item -Path $edgePolicyPath -Force | Out-Null
+}
+$edgeBlock = @(
+    'HubsSidebarEnabled',
+    'AllowBingChat',
+    'BrowserCopilotEnabled',
+    'EdgeCopilotEnabled',
+    'CopilotSidebarEnabled'
+)
+foreach ($key in $edgeBlock) {
+    Log "[EDGE POLICY] Setting $key = 0"
+    New-ItemProperty -Path $edgePolicyPath -Name $key -PropertyType DWord -Value 0 -Force
+}
+
+# === Group Policy Refresh
+Log "[POLICY] Running gpupdate..."
+Start-Process -Wait -FilePath "$env:SystemRoot\\System32\\gpupdate.exe" -ArgumentList '/force'
+
+Log "✅ COPILOT OBLITERATION COMPLETE. SYSTEM PURGED."
+Write-Host "💀 Copilot erased. Log file created: $logEnabled. 💀" -ForegroundColor Green
