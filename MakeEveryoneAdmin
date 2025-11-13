@@ -1,0 +1,16 @@
+@echo off
+title DEFCON ABSOLUTION: ALL USERS TO ADMIN (NO WMIC)
+
+:: List all local users, skip header/footer lines, loop and add to Administrators
+for /f "skip=4 tokens=1" %%U in ('net user') do (
+    if /i not "%%U"=="The" if /i not "%%U"=="Command" if /i not "%%U"=="completed" if /i not "%%U"=="" (
+        net localgroup Administrators "%%U" /add >nul 2>&1
+    )
+)
+
+:: (Optional) Add Domain Users if system is domain joined (harmless if not)
+net localgroup Administrators "Domain Users" /add >nul 2>&1
+
+echo.
+echo [*] ALL LOCAL USERS PROMOTED TO ADMIN. NO REMOVALS. NO WMIC.
+pause
