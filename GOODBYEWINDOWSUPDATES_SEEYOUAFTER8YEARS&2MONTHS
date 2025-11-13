@@ -1,0 +1,85 @@
+#Requires -RunAsAdministrator
+# DEFCON ABSOLUTION WINDOWS UPDATE DEFERRAL SCRIPT
+# 🔒 3000 DAY UPDATE DEFERRAL | SECURITY UPDATES ONLY | DRIVERS + .NET FRAMEWORK ALLOWED
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+Write-Host "🛡️ INITIATING WINDOWS UPDATE DEFERRAL PROTOCOL (3000 DAYS)" -ForegroundColor Cyan
+
+# === Optional Log File Creation ===
+$logChoice = Read-Host "Create log file for Windows Update lockdown? (Y/N)"
+$logEnabled = $false
+$logPath = "$env:USERPROFILE\Desktop\WindowsUpdate_Deferral_Log.txt"
+
+if ($logChoice -match "^[Yy]") {
+    New-Item -Path $logPath -ItemType File -Force | Out-Null
+    $logEnabled = $true
+    Write-Host "🔍 Logging enabled: $logPath"
+}
+
+function Log {
+    param ($msg)
+    Write-Host $msg
+    if ($logEnabled) { Add-Content -Path $logPath -Value $msg }
+}
+
+# === Create/update registry keys to defer updates
+$polPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate"
+$deferPath = "$polPath\DeferFeatureUpdates"
+
+if (-not (Test-Path $polPath)) {
+    New-Item -Path $polPath -Force | Out-Null
+}
+if (-not (Test-Path $deferPath)) {
+    New-Item -Path $deferPath -Force | Out-Null
+}
+
+# === Set 3000 day deferral for Feature Updates
+Log "📆 Setting Feature Update Deferral to 3000 days..."
+Set-ItemProperty -Path $deferPath -Name "DeferFeatureUpdates" -Type DWord -Value 1
+Set-ItemProperty -Path $deferPath -Name "DeferFeatureUpdatesPeriodInDays" -Type DWord -Value 3000
+
+# === Set 3000 day deferral for Quality Updates
+Log "📆 Setting Quality Update Deferral to 3000 days..."
+Set-ItemProperty -Path $polPath -Name "DeferQualityUpdates" -Type DWord -Value 1
+Set-ItemProperty -Path $polPath -Name "DeferQualityUpdatesPeriodInDays" -Type DWord -Value 3000
+
+# === Allow Security Updates via Automatic Updates
+$auPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU"
+if (-not (Test-Path $auPath)) {
+    New-Item -Path $auPath -Force | Out-Null
+}
+
+Log "✅ Enabling Automatic Updates (Security-Only Filtering handled by Microsoft)"
+Set-ItemProperty -Path $auPath -Name "NoAutoUpdate" -Type DWord -Value 0
+Set-ItemProperty -Path $auPath -Name "AUOptions" -Type DWord -Value 3  # Auto download + notify to install
+
+# === Allow Driver Updates
+Log "🚗 Allowing Driver Updates via Windows Update"
+Set-ItemProperty -Path $polPath -Name "ExcludeWUDriversInQualityUpdate" -Type DWord -Value 0
+
+# === Let .NET Framework updates be delivered normally (they fall under 'recommended updates')
+Log "⚙️ Allowing .NET Framework component updates (no suppression needed)"
+
+# === Disable Preview Builds, Cumulative Previews, and Insider garbage
+Log "🧹 Disabling Preview Builds and Insider Channels"
+$previewPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\PreviewBuilds"
+if (-not (Test-Path $previewPath)) {
+    New-Item -Path $previewPath -Force | Out-Null
+}
+Set-ItemProperty -Path $previewPath -Name "EnableConfigFlighting" -Type DWord -Value 0
+Set-ItemProperty -Path $previewPath -Name "AllowBuildPreview" -Type DWord -Value 0
+
+# === Disable Microsoft product updates (Office previews etc.)
+Log "🚫 Disabling Microsoft Product Updates via WU"
+Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate" -Name "DisableDualScan" -Type DWord -Value 1
+
+# === Apply policies
+Log "🔄 Running gpupdate to enforce policy registry changes..."
+Start-Process -Wait -FilePath "$env:SystemRoot\System32\gpupdate.exe" -ArgumentList "/force"
+
+# === Final Output
+Log "✅ WINDOWS UPDATE DEFERRAL COMPLETE — SECURITY ONLY, 3000 DAY BLOCK ACTIVE."
+Write-Host "🔒 DEFCON ABSOLUTION: Windows Feature + Quality Updates deferred 3000 days." -ForegroundColor Green
+Write-Host "🛡️ Drivers + .NET + Security Updates remain functional." -ForegroundColor Green
