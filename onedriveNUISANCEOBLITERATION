@@ -1,0 +1,109 @@
+#Requires -RunAsAdministrator
+# DEFCON ABSOLUTION — ONEDRIVE TOTAL SYSTEM PURGE
+# No SilentContinue. No mercy. Log file optional.
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+Write-Host "💣 INITIATING ONEDRIVE SCORCHED EARTH PURGE..." -ForegroundColor Red
+
+# === Optional Logging ===
+$logChoice = Read-Host "Create destruction log? (Y/N)"
+$logEnabled = $false
+$logPath = "$env:USERPROFILE\Desktop\OneDrive_Obliteration_Log.txt"
+
+if ($logChoice -match "^[Yy]") {
+    New-Item -Path $logPath -ItemType File -Force | Out-Null
+    $logEnabled = $true
+    Write-Host "🔍 Logging enabled: $logPath"
+}
+
+function Log {
+    param($text)
+    Write-Host $text
+    if ($logEnabled) { Add-Content -Path $logPath -Value $text }
+}
+
+# === Step 1: Kill OneDrive process
+Log "[PROC] Terminating OneDrive processes..."
+Stop-Process -Name OneDrive -Force -ErrorAction Stop
+
+# === Step 2: Uninstall OneDrive system binaries
+$sysWOW = "$env:SystemRoot\SysWOW64\OneDriveSetup.exe"
+$sys32  = "$env:SystemRoot\System32\OneDriveSetup.exe"
+
+if (Test-Path $sysWOW) {
+    Log "[UNINSTALL] Executing: $sysWOW /uninstall"
+    Start-Process -FilePath $sysWOW -ArgumentList "/uninstall" -Wait
+} elseif (Test-Path $sys32) {
+    Log "[UNINSTALL] Executing: $sys32 /uninstall"
+    Start-Process -FilePath $sys32 -ArgumentList "/uninstall" -Wait
+} else {
+    Log "[WARNING] OneDriveSetup.exe not found. Might already be removed."
+}
+
+# === Step 3: Remove OneDrive leftover directories
+$folders = @(
+    "$env:LOCALAPPDATA\Microsoft\OneDrive",
+    "$env:ProgramData\Microsoft OneDrive",
+    "$env:USERPROFILE\OneDrive",
+    "$env:APPDATA\Microsoft\OneDrive",
+    "$env:SystemDrive\OneDriveTemp"
+)
+foreach ($f in $folders) {
+    if (Test-Path $f) {
+        Log "[FS] Deleting: $f"
+        Remove-Item -Path $f -Recurse -Force
+    }
+}
+
+# === Step 4: Registry Cleanup
+Log "[REGISTRY] Removing OneDrive Shell Extensions..."
+$regPaths = @(
+    "HKCR:\CLSID\{018D5C66-4533-4307-9B53-224DE2ED1FE6}",
+    "HKCR:\Wow6432Node\CLSID\{018D5C66-4533-4307-9B53-224DE2ED1FE6}",
+    "HKLM:\SOFTWARE\Policies\Microsoft\Windows\OneDrive",
+    "HKCU:\SOFTWARE\Microsoft\OneDrive",
+    "HKLM:\SOFTWARE\Microsoft\OneDrive",
+    "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run\OneDrive",
+    "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Run\OneDrive"
+)
+foreach ($rk in $regPaths) {
+    if (Test-Path $rk) {
+        Log "[REG DELETE] $rk"
+        Remove-Item -Path $rk -Recurse -Force
+    }
+}
+
+# === Step 5: Disable OneDrive sync icon in File Explorer
+Log "[EXPLORER] Disabling OneDrive icon in navigation pane..."
+$navKey = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\FolderDescriptions\{A52BBA46-E9E1-435f-B3D9-28DAA648C0F6}"
+if (Test-Path $navKey) {
+    Set-ItemProperty -Path $navKey -Name "System.IsPinnedToNameSpaceTree" -Value 0
+}
+
+# === Step 6: Kill OneDrive-related scheduled tasks
+Log "[TASKS] Deleting OneDrive scheduled tasks..."
+$tasks = @(
+    "Microsoft\Windows\OneDrive\OneDrive Standalone Update Task",
+    "Microsoft\Windows\OneDrive\BackgroundUploadTask"
+)
+foreach ($t in $tasks) {
+    schtasks /Delete /TN $t /F
+}
+
+# === Step 7: Prevent OneDrive reinstall via Windows Update (Policy Harden)
+Log "[POLICY] Blocking future OneDrive reinstalls via Windows Update..."
+$policyPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\OneDrive"
+if (-not (Test-Path $policyPath)) {
+    New-Item -Path $policyPath -Force | Out-Null
+}
+Set-ItemProperty -Path $policyPath -Name "DisableFileSync" -Type DWord -Value 1
+
+# === Step 8: gpupdate to finalize policy
+Log "[GPUPDATE] Applying policy changes..."
+Start-Process -Wait -FilePath "$env:SystemRoot\System32\gpupdate.exe" -ArgumentList "/force"
+
+# === Complete
+Log "✅ ONEDRIVE OBLITERATION COMPLETE."
+Write-Host "💀 OneDrive exorcised from system. Restart recommended to purge shell remnants." -ForegroundColor Red
