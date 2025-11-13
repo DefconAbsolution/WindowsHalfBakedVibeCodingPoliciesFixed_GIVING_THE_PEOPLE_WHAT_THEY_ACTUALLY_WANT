@@ -1,0 +1,113 @@
+# DEFCONABSOLUTION RDP KILL SCRIPT // FULL VERBOSE MODE WITH OPTIONAL LOGGING
+# Prompts Y/N for logging, then executes total RDP annihilation
+
+$useLog = Read-Host "Enable logging to C:\\DefconAbsolution\\KILL SCRIPTS\\rdp_kill_verbose.log ? (y/n)"
+$DoLog = $useLog -match '^[Yy]'
+
+$LogRoot = "C:\DefconAbsolution\KILL SCRIPTS"
+$LogFile = Join-Path $LogRoot "rdp_kill_verbose.log"
+
+if ($DoLog -and !(Test-Path $LogRoot)) {
+    New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
+}
+
+function Log {
+    param([string]$msg)
+    $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+    $line = "$timestamp :: $msg"
+    Write-Host $line
+    if ($DoLog) {
+        $line | Out-File -FilePath $LogFile -Append -Encoding UTF8
+    }
+}
+
+Log "===== DEFCONABSOLUTION RDP EXTERMINATION INITIATED ====="
+
+# 0. Kill TermService
+Log "Stopping TermService (Remote Desktop Services)"
+Stop-Service TermService -Force
+Log "Setting TermService startup type -> Disabled"
+Set-Service TermService -StartupType Disabled
+
+# 1. Registry: Core RDP denial
+Log "Registry: fDenyTSConnections -> 1 (NO RDP CONNECTIONS ALLOWED)"
+Set-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server" fDenyTSConnections 1 -Type DWord
+
+# 2. Registry: Terminal Services lockdown
+$tsPol = "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services"
+Log "Recreating $tsPol"
+New-Item $tsPol -Force | Out-Null
+
+$tsSettings = @{
+    fDenyTSConnections = 1
+    fAllowToGetHelp = 0
+    Shadow = 0
+    fDisableCdm = 1
+    fDisableLPT = 1
+    fDisableCcm = 1
+    DisableClipboardRedirection = 1
+    fDisableAudioCapture = 1
+    MaxIdleTime = 1
+    MaxConnectionTime = 1
+    MaxDisconnectionTime = 1
+    LicensingMode = 0
+}
+
+foreach ($key in $tsSettings.Keys) {
+    Log "Registry: $key -> $($tsSettings[$key])"
+    Set-ItemProperty $tsPol $key $tsSettings[$key] -Type DWord
+}
+
+# 3. Delete WinStations
+Log "Deleting WinStations hive (obliterating RDP listeners)"
+Remove-Item "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations" -Recurse -Force
+Log "Recreating blank WinStations hive"
+New-Item "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations" -Force | Out-Null
+
+# 4. Firewall rules
+$fwRules = @(
+    @{ Name="Kill-RDP-Inbound"; Direction="Inbound"; Protocol="TCP"; Port=3389 },
+    @{ Name="Kill-RDP-Outbound"; Direction="Outbound"; Protocol="TCP"; Port=3389 },
+    @{ Name="Kill-RDP-UDP"; Direction="Inbound"; Protocol="UDP"; Port=3389 }
+)
+
+foreach ($rule in $fwRules) {
+    Log "Firewall: Creating rule $($rule.Name) [$($rule.Direction) $($rule.Protocol) Port $($rule.Port)]"
+    New-NetFirewallRule -DisplayName $rule.Name -Direction $rule.Direction -Protocol $rule.Protocol -LocalPort $rule.Port -Action Block
+}
+
+# 5. WinRM execution death
+Log "Disabling WinRM (remote shell remoting)"
+Set-ItemProperty "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WinRM\Service" AllowAutoConfig 0 -Type DWord
+Set-ItemProperty "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WinRM\Service" AllowUnencryptedTraffic 0 -Type DWord
+Set-ItemProperty "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WinRM\Service" IPv4Filter "0.0.0.0" -Type String
+Stop-Service WinRM -Force
+Log "WinRM -> STOPPED"
+Set-Service WinRM -StartupType Disabled
+Log "WinRM startup type -> Disabled"
+
+# 6. DISM features
+$features = @(
+    "RemoteAssistance",
+    "WindowsHelp",
+    "MultiPoint-Connector"
+)
+
+foreach ($f in $features) {
+    Log "DISM: Disabling Optional Feature -> $f"
+    Dism.exe /Online /Disable-Feature /FeatureName:$f /NoRestart
+}
+
+# 7. WMIC TermService
+Log "WMIC: Forcing TermService listener to halt"
+wmic path win32_terminalservice where "Name like 'TermService'" call StopService | Out-Null
+
+# 8. Permission kill on termsrv.dll
+$target = "C:\Windows\System\termsrv.dll"
+Log "Applying DENY Read/Execute on $target"
+$acl = Get-Acl $target
+$deny = New-Object System.Security.AccessControl.FileSystemAccessRule("Everyone","ReadAndExecute","Deny")
+$acl.AddAccessRule($deny)
+Set-Acl $target $acl
+
+Log "===== COMPLETED: RDP EXTERMINATION LOGGED FULLY ====="
