@@ -1,85 +1,78 @@
 #Requires -RunAsAdministrator
-# DEFCON ABSOLUTION WINDOWS UPDATE DEFERRAL SCRIPT
-# 🔒 3000 DAY UPDATE DEFERRAL | SECURITY UPDATES ONLY | DRIVERS + .NET FRAMEWORK ALLOWED
-
+# DEFCON ABSOLUTION: UPDATE POLICY - 8 YEAR PAUSE
 Set-StrictMode -Version Latest
-$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Continue'
 
-Write-Host "🛡️ INITIATING WINDOWS UPDATE DEFERRAL PROTOCOL (3000 DAYS)" -ForegroundColor Cyan
+Write-Host "🔥 SYSTEM ALERT: CONFIGURING UPDATE FREEDOM PROTOCOL. 🔥" -ForegroundColor Red
 
-# === Optional Log File Creation ===
-$logChoice = Read-Host "Create log file for Windows Update lockdown? (Y/N)"
-$logEnabled = $false
-$logPath = "$env:USERPROFILE\Desktop\WindowsUpdate_Deferral_Log.txt"
-
-if ($logChoice -match "^[Yy]") {
-    New-Item -Path $logPath -ItemType File -Force | Out-Null
-    $logEnabled = $true
-    Write-Host "🔍 Logging enabled: $logPath"
-}
-
+# === LOGGING SETUP ===
+$LogPath = "$env:SystemDrive\DefconAbsolution_UpdateUnlock_Log.txt"
 function Log {
     param ($msg)
-    Write-Host $msg
-    if ($logEnabled) { Add-Content -Path $logPath -Value $msg }
+    $timestamp = (Get-Date).ToString("HH:mm:ss")
+    Write-Host "[$timestamp] $msg" -ForegroundColor Red
+    try { Add-Content -Path $LogPath -Value "[$timestamp] $msg" -ErrorAction Continue } catch { Write-Host "Log write failed." -ForegroundColor Red }
 }
 
-# === Create/update registry keys to defer updates
-$polPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate"
-$deferPath = "$polPath\DeferFeatureUpdates"
+# === PHASE 1: EXTEND PAUSE LIMIT (8 YEARS) ===
+Log "PHASE 1: EXTENDING PAUSE LIMIT TO 3000 DAYS (8 YEARS)"
+$UXSettings = "HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings"
 
-if (-not (Test-Path $polPath)) {
-    New-Item -Path $polPath -Force | Out-Null
-}
-if (-not (Test-Path $deferPath)) {
-    New-Item -Path $deferPath -Force | Out-Null
+if (-not (Test-Path $UXSettings)) {
+    try { New-Item -Path $UXSettings -Force | Out-Null } catch { Write-Host "  !! Failed to create UX key." -ForegroundColor Red }
 }
 
-# === Set 3000 day deferral for Feature Updates
-Log "📆 Setting Feature Update Deferral to 3000 days..."
-Set-ItemProperty -Path $deferPath -Name "DeferFeatureUpdates" -Type DWord -Value 1
-Set-ItemProperty -Path $deferPath -Name "DeferFeatureUpdatesPeriodInDays" -Type DWord -Value 3000
-
-# === Set 3000 day deferral for Quality Updates
-Log "📆 Setting Quality Update Deferral to 3000 days..."
-Set-ItemProperty -Path $polPath -Name "DeferQualityUpdates" -Type DWord -Value 1
-Set-ItemProperty -Path $polPath -Name "DeferQualityUpdatesPeriodInDays" -Type DWord -Value 3000
-
-# === Allow Security Updates via Automatic Updates
-$auPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU"
-if (-not (Test-Path $auPath)) {
-    New-Item -Path $auPath -Force | Out-Null
+try {
+    # 3000 Days = Approx 8.2 Years
+    Set-ItemProperty -Path $UXSettings -Name "FlightSettingsMaxPauseDays" -Value 3000 -Type DWord -Force
+    Log "  >> Pause Limit Extended to 3000 Days."
+} catch {
+    Write-Host "  !! FAILED to set pause limit: $_" -ForegroundColor Red
 }
 
-Log "✅ Enabling Automatic Updates (Security-Only Filtering handled by Microsoft)"
-Set-ItemProperty -Path $auPath -Name "NoAutoUpdate" -Type DWord -Value 0
-Set-ItemProperty -Path $auPath -Name "AUOptions" -Type DWord -Value 3  # Auto download + notify to install
+# === PHASE 2: REMOVE VERSION LOCKS ===
+Log "PHASE 2: REMOVING VERSION TARGET LOCKS"
+$WUPolicy = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate"
 
-# === Allow Driver Updates
-Log "🚗 Allowing Driver Updates via Windows Update"
-Set-ItemProperty -Path $polPath -Name "ExcludeWUDriversInQualityUpdate" -Type DWord -Value 0
-
-# === Let .NET Framework updates be delivered normally (they fall under 'recommended updates')
-Log "⚙️ Allowing .NET Framework component updates (no suppression needed)"
-
-# === Disable Preview Builds, Cumulative Previews, and Insider garbage
-Log "🧹 Disabling Preview Builds and Insider Channels"
-$previewPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\PreviewBuilds"
-if (-not (Test-Path $previewPath)) {
-    New-Item -Path $previewPath -Force | Out-Null
+if (Test-Path $WUPolicy) {
+    $Locks = @("TargetReleaseVersion", "TargetReleaseVersionInfo", "ProductVersion")
+    
+    foreach ($Lock in $Locks) {
+        try {
+            Remove-ItemProperty -Path $WUPolicy -Name $Lock -ErrorAction Stop
+            Log "  >> REMOVED LOCK: $Lock"
+        } catch {
+            if ($_.Exception.Message -match "doesn't exist") {
+                Log "  >> Lock '$Lock' was not present."
+            } else {
+                Write-Host "  !! FAILED to remove '$Lock': $_" -ForegroundColor Red
+            }
+        }
+    }
+} else {
+    Log "  >> WindowsUpdate Policy key not found. System is already unlocked."
 }
-Set-ItemProperty -Path $previewPath -Name "EnableConfigFlighting" -Type DWord -Value 0
-Set-ItemProperty -Path $previewPath -Name "AllowBuildPreview" -Type DWord -Value 0
 
-# === Disable Microsoft product updates (Office previews etc.)
-Log "🚫 Disabling Microsoft Product Updates via WU"
-Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate" -Name "DisableDualScan" -Type DWord -Value 1
+# === PHASE 3: ENSURE DRIVERS ARE ALLOWED ===
+Log "PHASE 3: VERIFYING DRIVER/SECURITY ACCESS"
+try {
+    # Ensure we didn't accidentally block drivers in a previous script
+    Set-ItemProperty -Path $WUPolicy -Name "ExcludeWUDriversInQualityUpdate" -Value 0 -Type DWord -Force
+    Log "  >> Drivers Allowed."
+} catch {
+    # Key might not exist if policy folder is missing, which defaults to Allowed anyway.
+}
 
-# === Apply policies
-Log "🔄 Running gpupdate to enforce policy registry changes..."
-Start-Process -Wait -FilePath "$env:SystemRoot\System32\gpupdate.exe" -ArgumentList "/force"
+# === PHASE 4: RESTART UPDATE SERVICE ===
+Log "PHASE 4: RESTARTING UPDATE ENGINE"
+try {
+    Stop-Service -Name "wuauserv" -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
+    Start-Service -Name "wuauserv" -ErrorAction Stop
+    Log "  >> Windows Update Service Restarted."
+} catch {
+    Write-Host "  !! SERVICE RESTART FAILED: $_" -ForegroundColor Red
+}
 
-# === Final Output
-Log "✅ WINDOWS UPDATE DEFERRAL COMPLETE — SECURITY ONLY, 3000 DAY BLOCK ACTIVE."
-Write-Host "🔒 DEFCON ABSOLUTION: Windows Feature + Quality Updates deferred 3000 days." -ForegroundColor Green
-Write-Host "🛡️ Drivers + .NET + Security Updates remain functional." -ForegroundColor Green
+Log "✅ OPERATION COMPLETE."
+Write-Host "You can now go to Settings > Windows Update > Pause Updates and select up to 150+ weeks." -ForegroundColor Red
