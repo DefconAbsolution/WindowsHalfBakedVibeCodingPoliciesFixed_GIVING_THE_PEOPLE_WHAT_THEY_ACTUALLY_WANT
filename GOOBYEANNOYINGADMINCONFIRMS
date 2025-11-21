@@ -1,6 +1,95 @@
-@echo off
-title DEFCON ABSOLUTION: UAC EXTERMINATION
-reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v EnableLUA /t REG_DWORD /d 0 /f
-reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v ConsentPromptBehaviorAdmin /t REG_DWORD /d 0 /f
-reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v PromptOnSecureDesktop /t REG_DWORD /d 0 /f
-reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v ConsentPromptBehaviorUser /t REG_DWORD /d 0 /f
+#Requires -RunAsAdministrator
+# DEFCON ABSOLUTION: UAC EXTERMINATION (KERNEL LEVEL)
+# Refined Edition - Full Error Visibility 
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Continue' # ERRORS WILL BE DISPLAYED.
+
+Write-Host "🔥 DEFCON ABSOLUTION: UAC OBLITERATION INITIATED 🔥" -ForegroundColor Red
+
+# === LOGGING SETUP ===
+$LogPath = "$env:SystemDrive\DefconAbsolution_UAC_Log.txt"
+function Log {
+    param ($msg)
+    $timestamp = (Get-Date).ToString("HH:mm:ss")
+    # FORCE RED TEXT FOR EVERYTHING
+    Write-Host "[$timestamp] $msg" -ForegroundColor Red
+    try { Add-Content -Path $LogPath -Value "[$timestamp] $msg" -ErrorAction Continue } catch { Write-Host "Log write failed." -ForegroundColor Red }
+}
+
+Log "Started UAC Extermination Protocol."
+
+# === PHASE 1: THE REGISTRY NUKE (System Policies) ===
+# Disabling the entire LUA subsystem.
+
+$PolSys = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+
+$RegistrySettings = @{
+    "EnableLUA"                   = 0  # The Kill Switch. 0 = UAC Fully Disabled.
+    "ConsentPromptBehaviorAdmin"  = 0  # 0 = Elevate without prompting.
+    "PromptOnSecureDesktop"       = 0  # 0 = No dimming the screen (Secure Desktop off).
+    "ConsentPromptBehaviorUser"   = 0  # 0 = Auto-deny elevation requests.
+    "EnableInstallerDetection"    = 0  # 0 = Don't guess if an app is an installer.
+    "ValidateAdminCodeSignatures" = 0  # 0 = Don't check signatures for elevation.
+    "EnableUIADesktopToggle"      = 0  # 0 = Disable UIAccess applications from toggling secure desktop.
+    "FilterAdministratorToken"    = 1  # 1 = Enforce Admin Token (Crucial when LUA is 0).
+    "EnableVirtualization"        = 0  # 0 = Disable file/registry virtualization (No more VirtualStore).
+}
+
+Log "PHASE 1: APPLYING REGISTRY ENFORCEMENT"
+foreach ($Key in $RegistrySettings.Keys) {
+    Log "  >> Setting $Key to $($RegistrySettings[$Key])"
+    try {
+        Set-ItemProperty -Path $PolSys -Name $Key -Value $RegistrySettings[$Key] -Type DWord -Force
+        Log "    >> SUCCESS."
+    } catch {
+        # Using Write-Host Red instead of Write-Error to maintain the requested aesthetic while showing the error
+        Write-Host "    !! FAILED to set registry key '$Key'. Exception: $_" -ForegroundColor Red
+    }
+}
+
+# === PHASE 2: SECURITY CENTER NOTIFICATIONS ===
+# Silence the "Check your security settings" nags.
+
+Log "PHASE 2: SILENCING SECURITY CENTER"
+$WscPath = "HKLM:\SOFTWARE\Microsoft\Windows Security Center"
+if (Test-Path $WscPath) {
+    try {
+        Set-ItemProperty -Path $WscPath -Name "UacDisableNotify" -Value 1 -Type DWord -Force
+        Log "  >> UAC Notifications Disabled."
+    } catch {
+        Write-Host "  !! FAILED to disable Security Center notifications. Exception: $_" -ForegroundColor Red
+    }
+} else {
+    Write-Host "  !! Windows Security Center registry key not found." -ForegroundColor Red
+}
+
+# === PHASE 3: DRIVER DECAPITATION (LUAFV) ===
+# LUA File Virtualization (luafv.sys) is responsible for file redirection.
+# We disable it at the kernel driver level.
+
+Log "PHASE 3: DISABLING LUA FILE VIRTUALIZATION DRIVER"
+$LuaFvPath = "HKLM:\SYSTEM\CurrentControlSet\Services\luafv"
+if (Test-Path $LuaFvPath) {
+    try {
+        # Set Start to 4 (Disabled)
+        Set-ItemProperty -Path $LuaFvPath -Name "Start" -Value 4 -Type DWord -Force
+        Log "  >> luafv.sys Driver Startup set to DISABLED (4)."
+    } catch {
+        Write-Host "  !! FAILED to disable luafv driver. Exception: $_" -ForegroundColor Red
+    }
+} else {
+    Write-Host "  !! luafv driver service not found (System might already be stripped)." -ForegroundColor Red
+}
+
+# === PHASE 4: REFRESH POLICIES ===
+Log "PHASE 4: REFRESHING GROUP POLICY"
+try {
+    Start-Process -FilePath "gpupdate.exe" -ArgumentList "/force" -NoNewWindow -Wait
+    Log "  >> Group Policy Refreshed."
+} catch {
+    Write-Host "  !! FAILED to run gpupdate. Exception: $_" -ForegroundColor Red
+}
+
+Log "✅ UAC EXTERMINATION COMPLETE."
+Write-Host "WARNING: A REBOOT IS REQUIRED FOR 'EnableLUA' AND 'luafv' CHANGES TO TAKE EFFECT." -ForegroundColor Red
+Write-Host "💀 UAC is dead. Reboot to bury it. 💀" -ForegroundColor Red
