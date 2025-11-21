@@ -1,116 +1,134 @@
 #Requires -RunAsAdministrator
-# DEFCON ABSOLUTION: COPILOT FULL SYSTEM PURGE — WITH OPTIONAL LOG FILE (Y/N)
+# DEFCON ABSOLUTION: COPILOT BLACK HOLE (NO RETURN)
 Set-StrictMode -Version Latest
-$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Continue'
 
-Write-Host "🔥 SCORCHED EARTH: COPILOT SYSTEM PURGE INITIATED 🔥" -ForegroundColor Red
+Write-Host "🔥 BLACK HOLE PROTOCOL: COPILOT EXTERMINATION INITIATED 🔥" -ForegroundColor Red
 
-# === Prompt for log file
+# === LOGGING SETUP ===
 $logChoice = Read-Host "Create destruction log? (Y/N)"
 $logEnabled = $false
-$logPath = "$env:USERPROFILE\Desktop\Copilot_Extermination_Log.txt"
+$logPath = "$env:USERPROFILE\Desktop\Copilot_BlackHole_Log.txt"
 
 if ($logChoice -match "^[Yy]") {
     New-Item -Path $logPath -ItemType File -Force | Out-Null
     $logEnabled = $true
-    Write-Host "🔍 Logging enabled: $logPath"
+    Write-Host "🔍 Logging active: $logPath" -ForegroundColor Red
 }
 
 function Log {
     param ($msg)
-    Write-Host $msg
-    if ($logEnabled) { Add-Content -Path $logPath -Value $msg }
+    $timestamp = (Get-Date).ToString("HH:mm:ss")
+    # FORCE RED TEXT FOR EVERYTHING
+    Write-Host "[$timestamp] $msg" -ForegroundColor Red
+    if ($logEnabled) { Add-Content -Path $logPath -Value "[$timestamp] $msg" -ErrorAction Continue }
 }
 
-# === DISM Feature Kill
-$features = @("MicrosoftWindows.Client.Copilot", "Copilot")
-foreach ($feature in $features) {
-    Log "[DISM] Disabling Feature: $feature"
-    dism /online /disable-feature /featurename:$feature /norestart
+# === HELPER: THE PERMISSION CRUSHER ===
+function Take-Ownership {
+    param($Target)
+    if (Test-Path $Target) {
+        Log "  >> Seizing Ownership: $Target"
+        try {
+            Start-Process "takeown" -ArgumentList "/f `"$Target`" /a" -NoNewWindow -Wait
+            Start-Process "icacls" -ArgumentList "`"$Target`" /grant Administrators:F /c" -NoNewWindow -Wait
+        } catch {
+            Write-Host "  !! Ownership Seizure Failed: $_" -ForegroundColor Red
+        }
+    }
 }
 
-# === Appx Package Removal
-$apps = Get-AppxPackage -AllUsers | Where-Object { $_.Name -like "*copilot*" }
-foreach ($app in $apps) {
-    Log "[APPX] Removing: $($app.Name)"
-    Remove-AppxPackage -Package $app.PackageFullName -AllUsers
+# === HELPER: THE REGISTRY TOMBSTONE ===
+function Tombstone-RegistryKey {
+    param($KeyPath)
+    Log "TOMBSTONING KEY: $KeyPath"
+    
+    if (Test-Path $KeyPath) { 
+        try {
+            Remove-Item -Path $KeyPath -Recurse -Force
+        } catch {
+            Write-Host "  !! Key Deletion Failed: $_" -ForegroundColor Red
+        }
+    }
+    
+    try {
+        New-Item -Path $KeyPath -Force | Out-Null
+        $acl = Get-Acl $KeyPath
+        $deny = New-Object System.Security.AccessControl.RegistryAccessRule("Everyone", "FullControl", "ContainerInherit,ObjectInherit", "None", "Deny")
+        $acl.AddAccessRule($deny)
+        Set-Acl -Path $KeyPath -AclObject $acl
+        Log "  >> ACL Lock Applied."
+    } catch { 
+        Write-Host "  !! ACL Lock Failed: $_" -ForegroundColor Red
+    }
 }
 
-# === Provisioned Package Kill
-$prov = Get-AppxProvisionedPackage -Online | Where-Object { $_.DisplayName -like "*copilot*" }
-foreach ($p in $prov) {
-    Log "[PROVISIONED] Removing: $($p.DisplayName)"
-    Remove-AppxProvisionedPackage -Online -PackageName $p.PackageName
+# === PHASE 1: PHYSICAL BINARY DESTRUCTION ===
+Log "PHASE 1: FILE SYSTEM SHREDDING"
+
+$WindowsApps = "$env:ProgramFiles\WindowsApps"
+# We use ErrorAction SilentlyContinue for Get-ChildItem only to avoid spamming "Access Denied" on non-related folders
+# The actual deletion logic is Strict.
+$CopilotFolders = Get-ChildItem $WindowsApps -Recurse -Filter "*Copilot*" -Directory -ErrorAction SilentlyContinue
+$CopilotFolders += Get-ChildItem $WindowsApps -Recurse -Filter "*BingChat*" -Directory -ErrorAction SilentlyContinue
+
+if ($CopilotFolders) {
+    foreach ($Folder in $CopilotFolders) {
+        $Path = $Folder.FullName
+        Log "  >> DETECTED: $Path"
+        Take-Ownership -Target $Path
+        try {
+            Remove-Item -Path $Path -Recurse -Force
+            Log "  >> DELETED."
+        } catch {
+            Write-Host "  !! Deletion Failed: $_" -ForegroundColor Red
+        }
+    }
+} else {
+    Log "  >> No physical Copilot folders found."
 }
 
-# === Kill Services
-$services = @("CopilotService")
-foreach ($svc in $services) {
-    Log "[SERVICE] Stopping and Disabling: $svc"
-    Stop-Service -Name $svc -Force
-    Set-Service -Name $svc -StartupType Disabled
+# === PHASE 2: APPX PACKAGE ANNIHILATION ===
+Log "PHASE 2: PACKAGE REMOVAL"
+$apps = Get-AppxPackage -AllUsers | Where-Object { $_.Name -like "*Copilot*" -or $_.Name -like "*BingChat*" }
+if ($apps) {
+    foreach ($app in $apps) {
+        Log "  >> Removing Package: $($app.Name)"
+        try {
+            Remove-AppxPackage -Package $app.PackageFullName -AllUsers
+        } catch {
+            Write-Host "  !! Package Removal Failed: $_" -ForegroundColor Red
+        }
+    }
+} else {
+    Log "  >> No active Appx packages found."
 }
 
-# === Destroy Tasks
-$tasks = @("Microsoft\\Windows\\WindowsCopilot\\CopilotUpdate")
-foreach ($t in $tasks) {
-    Log "[TASK] Deleting: $t"
-    schtasks /Delete /TN $t /F
-}
-
-# === Registry Extermination
+# === PHASE 3: REGISTRY TOMBSTONING ===
+Log "PHASE 3: REGISTRY BLACK HOLE (ACL LOCKS)"
 $regKeys = @(
-    "HKLM:SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsCopilot",
-    "HKCU:SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsCopilot",
-    "HKLM:SOFTWARE\\Microsoft\\Windows\\WindowsCopilot",
-    "HKCU:SOFTWARE\\Microsoft\\Windows\\WindowsCopilot"
+    "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsCopilot",
+    "HKCU:\SOFTWARE\Policies\Microsoft\Windows\WindowsCopilot",
+    "HKLM:\SOFTWARE\Microsoft\Windows\WindowsCopilot",
+    "HKCU:\SOFTWARE\Microsoft\Windows\WindowsCopilot",
+    "HKLM:\SOFTWARE\Policies\Microsoft\Edge\Recommended\Copilot"
 )
+
 foreach ($rk in $regKeys) {
-    Log "[REGISTRY] Removing: $rk"
-    Remove-Item -Path $rk -Recurse -Force
+    Tombstone-RegistryKey -KeyPath $rk
 }
 
-# === CLSID COM Removal
-$clsids = @(
-    "HKCR:CLSID\\{4D5FD7E5-1E3B-4E3A-A562-CE5E1F2D2F25}",
-    "HKCR:CLSID\\{76B82A57-44F5-4B4A-983F-7A6F588E5E7B}",
-    "HKCR:CLSID\\{E4FE6C00-1702-4DDA-B8E8-DAF1D00871D3}"
-)
-foreach ($clsid in $clsids) {
-    Log "[CLSID] Wiping: $clsid"
-    Remove-Item -Path $clsid -Recurse -Force
+# Specific Value Hardening
+try {
+    Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "ShowCopilotButton" -Value 0 -Force
+    Log "  >> ShowCopilotButton Disabled."
+} catch {
+    Write-Host "  !! Failed to disable Copilot Button value: $_" -ForegroundColor Red
 }
 
-# === Filesystem Cleanup
-$paths = @(
-    \"$env:LOCALAPPDATA\\Microsoft\\Windows\\Copilot\",
-    \"$env:LOCALAPPDATA\\Packages\\Microsoft.Windows.Copilot_*\" 
-)
-foreach ($path in $paths) {
-    Log "[FS] Deleting: $path"
-    Remove-Item -Path $path -Recurse -Force
-}
+# === PHASE 4: NETWORK NULL-ROUTING ===
+Log "PHASE 4: NETWORK NULL-ROUTING"
+$BlockDomains = @("copilot.microsoft.com", "edgeservices.bing.com", "sydney.bing.com")
+$HostsPath = "$env:SystemRoot\System32\drivers\etc\hosts"
 
-# === Edge Policy Shutdown
-$edgePolicyPath = 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Edge'
-if (-not (Test-Path $edgePolicyPath)) {
-    New-Item -Path $edgePolicyPath -Force | Out-Null
-}
-$edgeBlock = @(
-    'HubsSidebarEnabled',
-    'AllowBingChat',
-    'BrowserCopilotEnabled',
-    'EdgeCopilotEnabled',
-    'CopilotSidebarEnabled'
-)
-foreach ($key in $edgeBlock) {
-    Log "[EDGE POLICY] Setting $key = 0"
-    New-ItemProperty -Path $edgePolicyPath -Name $key -PropertyType DWord -Value 0 -Force
-}
-
-# === Group Policy Refresh
-Log "[POLICY] Running gpupdate..."
-Start-Process -Wait -FilePath "$env:SystemRoot\\System32\\gpupdate.exe" -ArgumentList '/force'
-
-Log "✅ COPILOT OBLITERATION COMPLETE. SYSTEM PURGED."
-Write-Host "💀 Copilot erased. Log file created: $logEnabled. 💀" -ForegroundColor Green
+try {
