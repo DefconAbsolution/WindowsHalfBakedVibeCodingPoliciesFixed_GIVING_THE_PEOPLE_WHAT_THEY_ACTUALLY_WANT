@@ -1,7 +1,7 @@
 #Requires -RunAsAdministrator
 # DEFCON ABSOLUTION: UPDATE POLICY - 8 YEAR PAUSE
 Set-StrictMode -Version Latest
-$ErrorActionPreference = 'Continue'
+$ErrorActionPreference = 'Continue' # ERRORS WILL BE DISPLAYED.
 
 Write-Host "🔥 SYSTEM ALERT: CONFIGURING UPDATE FREEDOM PROTOCOL. 🔥" -ForegroundColor Red
 
@@ -19,7 +19,11 @@ Log "PHASE 1: EXTENDING PAUSE LIMIT TO 3000 DAYS (8 YEARS)"
 $UXSettings = "HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings"
 
 if (-not (Test-Path $UXSettings)) {
-    try { New-Item -Path $UXSettings -Force | Out-Null } catch { Write-Host "  !! Failed to create UX key." -ForegroundColor Red }
+    try { 
+        New-Item -Path $UXSettings -Force | Out-Null 
+    } catch { 
+        Write-Host "  !! Failed to create UX key: $_" -ForegroundColor Red 
+    }
 }
 
 try {
@@ -60,15 +64,16 @@ try {
     Set-ItemProperty -Path $WUPolicy -Name "ExcludeWUDriversInQualityUpdate" -Value 0 -Type DWord -Force
     Log "  >> Drivers Allowed."
 } catch {
-    # Key might not exist if policy folder is missing, which defaults to Allowed anyway.
+    # Key might not exist if policy folder is missing
+    Write-Host "  !! Could not set Driver policy (Key missing?): $_" -ForegroundColor Red
 }
 
 # === PHASE 4: RESTART UPDATE SERVICE ===
 Log "PHASE 4: RESTARTING UPDATE ENGINE"
 try {
-    Stop-Service -Name "wuauserv" -Force -ErrorAction SilentlyContinue
+    Stop-Service -Name "wuauserv" -Force
     Start-Sleep -Seconds 2
-    Start-Service -Name "wuauserv" -ErrorAction Stop
+    Start-Service -Name "wuauserv"
     Log "  >> Windows Update Service Restarted."
 } catch {
     Write-Host "  !! SERVICE RESTART FAILED: $_" -ForegroundColor Red
