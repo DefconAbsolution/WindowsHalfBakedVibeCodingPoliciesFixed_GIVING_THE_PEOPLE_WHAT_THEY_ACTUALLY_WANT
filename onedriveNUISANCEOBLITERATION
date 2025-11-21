@@ -1,109 +1,201 @@
 #Requires -RunAsAdministrator
-# DEFCON ABSOLUTION — ONEDRIVE TOTAL SYSTEM PURGE
-# No SilentContinue. No mercy. Log file optional.
-
+# DEFCON ABSOLUTION: ONEDRIVE BLACK HOLE (NO RETURN)
+# Refined Edition - Strict Mode
 Set-StrictMode -Version Latest
-$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Continue'
 
-Write-Host "💣 INITIATING ONEDRIVE SCORCHED EARTH PURGE..." -ForegroundColor Red
+Write-Host "🔥 BLACK HOLE PROTOCOL: ONEDRIVE EXTERMINATION INITIATED 🔥" -ForegroundColor Red
 
-# === Optional Logging ===
+# === LOGGING SETUP ===
 $logChoice = Read-Host "Create destruction log? (Y/N)"
 $logEnabled = $false
-$logPath = "$env:USERPROFILE\Desktop\OneDrive_Obliteration_Log.txt"
+$logPath = "$env:USERPROFILE\Desktop\OneDrive_BlackHole_Log.txt"
 
 if ($logChoice -match "^[Yy]") {
     New-Item -Path $logPath -ItemType File -Force | Out-Null
     $logEnabled = $true
-    Write-Host "🔍 Logging enabled: $logPath"
+    Write-Host "🔍 Logging active: $logPath" -ForegroundColor Red
 }
 
 function Log {
-    param($text)
-    Write-Host $text
-    if ($logEnabled) { Add-Content -Path $logPath -Value $text }
+    param ($msg)
+    $timestamp = (Get-Date).ToString("HH:mm:ss")
+    # FORCE RED TEXT FOR EVERYTHING
+    Write-Host "[$timestamp] $msg" -ForegroundColor Red
+    if ($logEnabled) { Add-Content -Path $logPath -Value "[$timestamp] $msg" -ErrorAction Continue }
 }
 
-# === Step 1: Kill OneDrive process
-Log "[PROC] Terminating OneDrive processes..."
-Stop-Process -Name OneDrive -Force -ErrorAction Stop
+# === HELPER: THE REGISTRY TOMBSTONE ===
+# Deletes a key, recreates it empty, and sets DENY permissions.
+function Tombstone-RegistryKey {
+    param($KeyPath)
+    Log "TOMBSTONING KEY: $KeyPath"
+    
+    # 1. Delete if exists
+    if (Test-Path $KeyPath) { 
+        try {
+            Remove-Item -Path $KeyPath -Recurse -Force 
+        } catch {
+            Write-Host "  !! Key Deletion Failed: $_" -ForegroundColor Red
+        }
+    }
+    
+    # 2. Create empty key & Lock
+    try {
+        New-Item -Path $KeyPath -Force | Out-Null
+        $acl = Get-Acl $KeyPath
+        $deny = New-Object System.Security.AccessControl.RegistryAccessRule("Everyone", "FullControl", "ContainerInherit,ObjectInherit", "None", "Deny")
+        $acl.AddAccessRule($deny)
+        Set-Acl -Path $KeyPath -AclObject $acl
+        Log "  >> ACL Lock Applied."
+    } catch { 
+        Write-Host "  !! ACL Lock Failed: $_" -ForegroundColor Red
+    }
+}
 
-# === Step 2: Uninstall OneDrive system binaries
+# === PHASE 1: PROCESS KILL (NO MERCY) ===
+Log "PHASE 1: KILLING PROCESSES"
+$Targets = @("OneDrive", "explorer", "FileCoAuth")
+foreach ($T in $Targets) {
+    try {
+        Get-Process -Name $T -ErrorAction Stop | Stop-Process -Force
+        Log "  >> Killed: $T"
+    } catch {
+        Write-Host "  >> Process $T not running or could not be killed: $_" -ForegroundColor Red
+    }
+}
+
+# === PHASE 2: STANDARD UNINSTALL (ATTEMPT) ===
+Log "PHASE 2: STANDARD UNINSTALL"
 $sysWOW = "$env:SystemRoot\SysWOW64\OneDriveSetup.exe"
 $sys32  = "$env:SystemRoot\System32\OneDriveSetup.exe"
 
 if (Test-Path $sysWOW) {
-    Log "[UNINSTALL] Executing: $sysWOW /uninstall"
-    Start-Process -FilePath $sysWOW -ArgumentList "/uninstall" -Wait
+    Log "  >> Running SysWOW64 Uninstaller..."
+    try { Start-Process -FilePath $sysWOW -ArgumentList "/uninstall" -Wait -NoNewWindow } catch { Write-Host "  !! Uninstall Error: $_" -ForegroundColor Red }
 } elseif (Test-Path $sys32) {
-    Log "[UNINSTALL] Executing: $sys32 /uninstall"
-    Start-Process -FilePath $sys32 -ArgumentList "/uninstall" -Wait
+    Log "  >> Running System32 Uninstaller..."
+    try { Start-Process -FilePath $sys32 -ArgumentList "/uninstall" -Wait -NoNewWindow } catch { Write-Host "  !! Uninstall Error: $_" -ForegroundColor Red }
 } else {
-    Log "[WARNING] OneDriveSetup.exe not found. Might already be removed."
+    Log "  >> Uninstaller not found (Already gone?)"
 }
 
-# === Step 3: Remove OneDrive leftover directories
-$folders = @(
+# === PHASE 3: FILESYSTEM SHREDDING ===
+Log "PHASE 3: FILESYSTEM SHREDDING"
+$Folders = @(
     "$env:LOCALAPPDATA\Microsoft\OneDrive",
     "$env:ProgramData\Microsoft OneDrive",
     "$env:USERPROFILE\OneDrive",
     "$env:APPDATA\Microsoft\OneDrive",
-    "$env:SystemDrive\OneDriveTemp"
+    "$env:SystemDrive\OneDriveTemp",
+    "$env:LOCALAPPDATA\OneDrive"
 )
-foreach ($f in $folders) {
-    if (Test-Path $f) {
-        Log "[FS] Deleting: $f"
-        Remove-Item -Path $f -Recurse -Force
+
+foreach ($F in $Folders) {
+    if (Test-Path $F) {
+        Log "  >> SHREDDING: $F"
+        try {
+            Remove-Item -Path $F -Recurse -Force
+        } catch {
+            Write-Host "  !! FAILED TO DELETE $F : $_" -ForegroundColor Red
+        }
     }
 }
 
-# === Step 4: Registry Cleanup
-Log "[REGISTRY] Removing OneDrive Shell Extensions..."
-$regPaths = @(
-    "HKCR:\CLSID\{018D5C66-4533-4307-9B53-224DE2ED1FE6}",
-    "HKCR:\Wow6432Node\CLSID\{018D5C66-4533-4307-9B53-224DE2ED1FE6}",
+# === PHASE 4: ENVIRONMENT VARIABLE SCRUB ===
+Log "PHASE 4: ENVIRONMENT VARIABLE PURGE"
+try {
+    [Environment]::SetEnvironmentVariable("OneDrive", $null, "User")
+    [Environment]::SetEnvironmentVariable("OneDriveConsumer", $null, "User")
+    [Environment]::SetEnvironmentVariable("OneDrive", $null, "Machine")
+} catch {
+    Write-Host "  !! Env Var Scrub Error: $_" -ForegroundColor Red
+}
+
+# === PHASE 5: REGISTRY TOMBSTONING (ACL LOCKS) ===
+Log "PHASE 5: REGISTRY BLACK HOLE (ACL LOCKS)"
+$RegKeys = @(
     "HKLM:\SOFTWARE\Policies\Microsoft\Windows\OneDrive",
     "HKCU:\SOFTWARE\Microsoft\OneDrive",
     "HKLM:\SOFTWARE\Microsoft\OneDrive",
     "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run\OneDrive",
     "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Run\OneDrive"
 )
-foreach ($rk in $regPaths) {
-    if (Test-Path $rk) {
-        Log "[REG DELETE] $rk"
-        Remove-Item -Path $rk -Recurse -Force
+
+foreach ($rk in $RegKeys) {
+    Tombstone-RegistryKey -KeyPath $rk
+}
+
+# === PHASE 6: NAMESPACE & CLSID ANNIHILATION ===
+Log "PHASE 6: REMOVING EXPLORER ICONS (CLSID)"
+# This is the specific CLSID for the OneDrive Folder in Explorer
+$OneDriveCLSID = "{018D5C66-4533-4307-9B53-224DE2ED1FE6}"
+
+$CLSIDPaths = @(
+    "HKCR:\CLSID\$OneDriveCLSID",
+    "HKCR:\Wow6432Node\CLSID\$OneDriveCLSID",
+    "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Desktop\NameSpace\$OneDriveCLSID",
+    "HKCU:\Software\Classes\CLSID\$OneDriveCLSID"
+)
+
+foreach ($cp in $CLSIDPaths) {
+    if (Test-Path $cp) {
+        Log "  >> DELETING CLSID: $cp"
+        try {
+            Remove-Item -Path $cp -Recurse -Force
+        } catch {
+            Write-Host "  !! CLSID Deletion Failed: $_" -ForegroundColor Red
+        }
     }
 }
 
-# === Step 5: Disable OneDrive sync icon in File Explorer
-Log "[EXPLORER] Disabling OneDrive icon in navigation pane..."
-$navKey = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\FolderDescriptions\{A52BBA46-E9E1-435f-B3D9-28DAA648C0F6}"
-if (Test-Path $navKey) {
-    Set-ItemProperty -Path $navKey -Name "System.IsPinnedToNameSpaceTree" -Value 0
+# Remove from the Navigation Pane specifically
+$NavKey = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\FolderDescriptions\{A52BBA46-E9E1-435f-B3D9-28DAA648C0F6}"
+if (Test-Path $NavKey) {
+    try {
+        Set-ItemProperty -Path $NavKey -Name "System.IsPinnedToNameSpaceTree" -Value 0 -Type DWord -Force
+        Log "  >> Unpinned from Namespace Tree."
+    } catch {
+        Write-Host "  !! Failed to unpin from Namespace: $_" -ForegroundColor Red
+    }
 }
 
-# === Step 6: Kill OneDrive-related scheduled tasks
-Log "[TASKS] Deleting OneDrive scheduled tasks..."
-$tasks = @(
-    "Microsoft\Windows\OneDrive\OneDrive Standalone Update Task",
-    "Microsoft\Windows\OneDrive\BackgroundUploadTask"
+# === PHASE 7: DISABLE FILE SYNC PROVIDERS ===
+Log "PHASE 7: DISABLING CLOUD SYNC ENGINES"
+$SyncKeys = @(
+    "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\FileSyncHandlers\$OneDriveCLSID",
+    "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\SyncRootManager\OneDrive"
 )
-foreach ($t in $tasks) {
-    schtasks /Delete /TN $t /F
+foreach ($sk in $SyncKeys) {
+    if (Test-Path $sk) { 
+        try {
+            Remove-Item -Path $sk -Recurse -Force 
+            Log "  >> Sync Provider Removed: $sk"
+        } catch {
+            Write-Host "  !! Failed to remove Sync Provider: $_" -ForegroundColor Red
+        }
+    }
 }
 
-# === Step 7: Prevent OneDrive reinstall via Windows Update (Policy Harden)
-Log "[POLICY] Blocking future OneDrive reinstalls via Windows Update..."
-$policyPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\OneDrive"
-if (-not (Test-Path $policyPath)) {
-    New-Item -Path $policyPath -Force | Out-Null
+# === PHASE 8: POLICY HARDENING ===
+Log "PHASE 8: POLICY ENFORCEMENT"
+$PolicyPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\OneDrive"
+if (-not (Test-Path $PolicyPath)) { 
+    try { New-Item -Path $PolicyPath -Force | Out-Null } catch { Write-Host "  !! Failed to create Policy Key: $_" -ForegroundColor Red }
 }
-Set-ItemProperty -Path $policyPath -Name "DisableFileSync" -Type DWord -Value 1
 
-# === Step 8: gpupdate to finalize policy
-Log "[GPUPDATE] Applying policy changes..."
-Start-Process -Wait -FilePath "$env:SystemRoot\System32\gpupdate.exe" -ArgumentList "/force"
+try {
+    Set-ItemProperty -Path $PolicyPath -Name "DisableFileSyncNGSC" -Value 1 -Type DWord -Force
+    Set-ItemProperty -Path $PolicyPath -Name "DisableFileSync" -Value 1 -Type DWord -Force
+    Set-ItemProperty -Path $PolicyPath -Name "PreventNetworkTrafficPreUserSignIn" -Value 1 -Type DWord -Force
+    Log "  >> Policies Enforced."
+} catch {
+    Write-Host "  !! Policy Enforcement Failed: $_" -ForegroundColor Red
+}
 
-# === Complete
-Log "✅ ONEDRIVE OBLITERATION COMPLETE."
-Write-Host "💀 OneDrive exorcised from system. Restart recommended to purge shell remnants." -ForegroundColor Red
+# === PHASE 9: RESTART EXPLORER ===
+Log "PHASE 9: RESTARTING EXPLORER"
+Start-Process explorer.exe
+
+Log "✅ BLACK HOLE ESTABLISHED. ONEDRIVE FILES SHREDDED. REGISTRY LOCKED."
+Write-Host "💀 OneDrive is gone. Registry keys are now Read-Only to System. 💀" -ForegroundColor Red
