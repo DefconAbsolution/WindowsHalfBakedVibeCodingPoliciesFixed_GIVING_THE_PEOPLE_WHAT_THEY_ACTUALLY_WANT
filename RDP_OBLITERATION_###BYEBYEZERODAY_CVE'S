@@ -1,113 +1,153 @@
-# DEFCONABSOLUTION RDP KILL SCRIPT // FULL VERBOSE MODE WITH OPTIONAL LOGGING
-# Prompts Y/N for logging, then executes total RDP annihilation
+#Requires -RunAsAdministrator
+# DEFCON ABSOLUTION: RDP OBLITERATION V4 (BLACK HOLE)
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Continue' # ERRORS WILL BE DISPLAYED.
 
-$useLog = Read-Host "Enable logging to C:\\DefconAbsolution\\KILL SCRIPTS\\rdp_kill_verbose.log ? (y/n)"
+Write-Host "🔥 DEFCON ABSOLUTION: RDP OBLITERATION INITIATED 🔥" -ForegroundColor Red
+
+# === LOGGING SETUP ===
+$useLog = Read-Host "Enable logging to C:\DefconAbsolution\KILL SCRIPTS\rdp_kill_verbose.log ? (y/n)"
 $DoLog = $useLog -match '^[Yy]'
 
 $LogRoot = "C:\DefconAbsolution\KILL SCRIPTS"
 $LogFile = Join-Path $LogRoot "rdp_kill_verbose.log"
 
 if ($DoLog -and !(Test-Path $LogRoot)) {
-    New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
+    try { New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null } catch { Write-Host "Log dir creation failed." -ForegroundColor Red }
 }
 
 function Log {
     param([string]$msg)
     $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
     $line = "$timestamp :: $msg"
-    Write-Host $line
+    Write-Host $line -ForegroundColor Red
     if ($DoLog) {
-        $line | Out-File -FilePath $LogFile -Append -Encoding UTF8
+        try { $line | Out-File -FilePath $LogFile -Append -Encoding UTF8 -ErrorAction Continue } catch {}
     }
 }
 
-Log "===== DEFCONABSOLUTION RDP EXTERMINATION INITIATED ====="
-
-# 0. Kill TermService
-Log "Stopping TermService (Remote Desktop Services)"
-Stop-Service TermService -Force
-Log "Setting TermService startup type -> Disabled"
-Set-Service TermService -StartupType Disabled
-
-# 1. Registry: Core RDP denial
-Log "Registry: fDenyTSConnections -> 1 (NO RDP CONNECTIONS ALLOWED)"
-Set-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server" fDenyTSConnections 1 -Type DWord
-
-# 2. Registry: Terminal Services lockdown
-$tsPol = "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services"
-Log "Recreating $tsPol"
-New-Item $tsPol -Force | Out-Null
-
-$tsSettings = @{
-    fDenyTSConnections = 1
-    fAllowToGetHelp = 0
-    Shadow = 0
-    fDisableCdm = 1
-    fDisableLPT = 1
-    fDisableCcm = 1
-    DisableClipboardRedirection = 1
-    fDisableAudioCapture = 1
-    MaxIdleTime = 1
-    MaxConnectionTime = 1
-    MaxDisconnectionTime = 1
-    LicensingMode = 0
+function Take-Ownership {
+    param($Target)
+    if (Test-Path $Target) {
+        Log "  >> Seizing Ownership: $Target"
+        Start-Process "takeown" -ArgumentList "/f `"$Target`" /a" -NoNewWindow -Wait
+        Start-Process "icacls" -ArgumentList "`"$Target`" /grant Administrators:F /c" -NoNewWindow -Wait
+    }
 }
 
-foreach ($key in $tsSettings.Keys) {
-    Log "Registry: $key -> $($tsSettings[$key])"
-    Set-ItemProperty $tsPol $key $tsSettings[$key] -Type DWord
+Log "===== DEFCONABSOLUTION RDP OBLITERATION V4 INITIATED ====="
+
+# PHASE 1: KERNEL SERVICE DELETION
+Log "PHASE 1: KERNEL SERVICE DELETION"
+$RdpServices = @(
+    "TermService",      # Remote Desktop Services
+    "SessionEnv",       # Remote Desktop Configuration
+    "UmRdpService",     # Remote Desktop Services UserMode Port Redirector
+    "tapisrv"           # Telephony (Required for RDP Dial-in)
+)
+
+foreach ($Service in $RdpServices) {
+    Log "TERMINATING SERVICE: $Service"
+    try {
+        Stop-Service -Name $Service -Force
+        Log "  >> Service Stopped."
+    } catch {
+        Write-Host "  !! Stop Failed: $_" -ForegroundColor Red
+    }
+
+    Log "DELETING SERVICE ENTRY: $Service"
+    try {
+        $proc = Start-Process "sc.exe" -ArgumentList "delete $Service" -NoNewWindow -Wait -PassThru
+        if ($proc.ExitCode -ne 0) { Write-Host "  !! SC DELETE Exit Code: $($proc.ExitCode)" -ForegroundColor Red }
+    } catch {
+        Write-Host "  !! SC DELETE Failed: $_" -ForegroundColor Red
+    }
 }
 
-# 3. Delete WinStations
-Log "Deleting WinStations hive (obliterating RDP listeners)"
-Remove-Item "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations" -Recurse -Force
-Log "Recreating blank WinStations hive"
-New-Item "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations" -Force | Out-Null
+# PHASE 2: REGISTRY ANNIHILATION
+Log "PHASE 2: REGISTRY ANNIHILATION"
+$RegTargets = @(
+    "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server",
+    "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services",
+    "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Terminal Server"
+)
 
-# 4. Firewall rules
+foreach ($RegKey in $RegTargets) {
+    if (Test-Path $RegKey) {
+        Log "WIPING REGISTRY TREE: $RegKey"
+        try {
+            Remove-Item -Path $RegKey -Recurse -Force
+        } catch {
+            Write-Host "  !! Registry Delete Failed: $_" -ForegroundColor Red
+        }
+    }
+}
+
+# PHASE 3: BINARY DESTRUCTION (File System)
+Log "PHASE 3: BINARY DESTRUCTION"
+$Binaries = @(
+    "$env:SystemRoot\System32\termsrv.dll",        # The RDP Server DLL
+    "$env:SystemRoot\System32\mstsc.exe",          # The RDP Client
+    "$env:SystemRoot\System32\mstscax.dll",        # RDP ActiveX
+    "$env:SystemRoot\System32\drivers\termdd.sys", # Terminal Server Driver
+    "$env:SystemRoot\System32\rdpclip.exe"         # Clipboard Monitor
+)
+
+foreach ($File in $Binaries) {
+    if (Test-Path $File) {
+        Take-Ownership -Target $File
+        Log "DELETING FILE: $File"
+        try {
+            Remove-Item -Path $File -Force
+        } catch {
+            Write-Host "  !! File Delete Failed: $_" -ForegroundColor Red
+        }
+    } else {
+        Log "File already missing: $File"
+    }
+}
+
+# PHASE 4: FIREWALL LOCKDOWN
+Log "PHASE 4: FIREWALL LOCKDOWN"
 $fwRules = @(
-    @{ Name="Kill-RDP-Inbound"; Direction="Inbound"; Protocol="TCP"; Port=3389 },
-    @{ Name="Kill-RDP-Outbound"; Direction="Outbound"; Protocol="TCP"; Port=3389 },
-    @{ Name="Kill-RDP-UDP"; Direction="Inbound"; Protocol="UDP"; Port=3389 }
+    @{ Name="BLOCK-RDP-TCP-IN"; Direction="Inbound"; Protocol="TCP"; Port=3389 },
+    @{ Name="BLOCK-RDP-TCP-OUT"; Direction="Outbound"; Protocol="TCP"; Port=3389 },
+    @{ Name="BLOCK-RDP-UDP-IN"; Direction="Inbound"; Protocol="UDP"; Port=3389 },
+    @{ Name="BLOCK-RDP-UDP-OUT"; Direction="Outbound"; Protocol="UDP"; Port=3389 }
 )
 
 foreach ($rule in $fwRules) {
-    Log "Firewall: Creating rule $($rule.Name) [$($rule.Direction) $($rule.Protocol) Port $($rule.Port)]"
-    New-NetFirewallRule -DisplayName $rule.Name -Direction $rule.Direction -Protocol $rule.Protocol -LocalPort $rule.Port -Action Block
+    Log "FIREWALL: Creating Block Rule $($rule.Name)"
+    try {
+        New-NetFirewallRule -DisplayName $rule.Name -Direction $rule.Direction -Protocol $rule.Protocol -LocalPort $rule.Port -Action Block | Out-Null
+    } catch {
+        Write-Host "  !! Firewall Rule Failed: $_" -ForegroundColor Red
+    }
 }
 
-# 5. WinRM execution death
-Log "Disabling WinRM (remote shell remoting)"
-Set-ItemProperty "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WinRM\Service" AllowAutoConfig 0 -Type DWord
-Set-ItemProperty "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WinRM\Service" AllowUnencryptedTraffic 0 -Type DWord
-Set-ItemProperty "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WinRM\Service" IPv4Filter "0.0.0.0" -Type String
-Stop-Service WinRM -Force
-Log "WinRM -> STOPPED"
-Set-Service WinRM -StartupType Disabled
-Log "WinRM startup type -> Disabled"
-
-# 6. DISM features
-$features = @(
-    "RemoteAssistance",
-    "WindowsHelp",
-    "MultiPoint-Connector"
-)
-
-foreach ($f in $features) {
-    Log "DISM: Disabling Optional Feature -> $f"
-    Dism.exe /Online /Disable-Feature /FeatureName:$f /NoRestart
+# PHASE 5: GROUP PURGE
+Log "PHASE 5: GROUP PURGE"
+Log "DELETING GROUP: Remote Desktop Users"
+try {
+    $Group = [ADSI]"WinNT://$env:COMPUTERNAME/Remote Desktop Users,group"
+    $Group.DeleteObject() 
+    Log "Group Deleted."
+} catch {
+    Write-Host "  !! Group deletion failed (Already gone?): $_" -ForegroundColor Red
 }
 
-# 7. WMIC TermService
-Log "WMIC: Forcing TermService listener to halt"
-wmic path win32_terminalservice where "Name like 'TermService'" call StopService | Out-Null
+# PHASE 6: LISTENER PORT NULLIFICATION
+Log "PHASE 6: LISTENER PORT NULLIFICATION"
+$RDPKey = "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp"
+if (-not (Test-Path $RDPKey)) { 
+    Log "Creating Dummy RDP Key to trap port..."
+    try { New-Item -Path $RDPKey -Force | Out-Null } catch {}
+}
+Log "Setting PortNumber to 0 (Null)"
+try {
+    Set-ItemProperty -Path $RDPKey -Name "PortNumber" -Value 0 -Type DWord -Force
+} catch {
+    Write-Host "  !! Port Nullification Failed: $_" -ForegroundColor Red
+}
 
-# 8. Permission kill on termsrv.dll
-$target = "C:\Windows\System\termsrv.dll"
-Log "Applying DENY Read/Execute on $target"
-$acl = Get-Acl $target
-$deny = New-Object System.Security.AccessControl.FileSystemAccessRule("Everyone","ReadAndExecute","Deny")
-$acl.AddAccessRule($deny)
-Set-Acl $target $acl
-
-Log "===== COMPLETED: RDP EXTERMINATION LOGGED FULLY ====="
+Log "===== OBLITERATION COMPLETE. REBOOT REQUIRED. ====="
