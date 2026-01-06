@@ -130,5 +130,3 @@ try {
 Log "PHASE 4: NETWORK NULL-ROUTING"
 $BlockDomains = @("copilot.microsoft.com", "edgeservices.bing.com", "sydney.bing.com")
 $HostsPath = "$env:SystemRoot\System32\drivers\etc\hosts"
-
-try {
